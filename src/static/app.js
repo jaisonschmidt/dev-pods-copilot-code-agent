@@ -324,8 +324,14 @@ document.addEventListener("DOMContentLoaded", () => {
       name.includes("music") ||
       name.includes("theater") ||
       name.includes("drama") ||
+      name.includes("manga") ||
+      name.includes("reading") ||
       desc.includes("creative") ||
-      desc.includes("paint")
+      desc.includes("paint") ||
+      desc.includes("gráficos") ||
+      desc.includes("graphic") ||
+      desc.includes("stories") ||
+      desc.includes("histórias")
     ) {
       return "arts";
     } else if (
