@@ -2,14 +2,99 @@
 MongoDB database configuration and setup for Mergington High School API
 """
 
-from pymongo import MongoClient
 from argon2 import PasswordHasher
 
-# Connect to MongoDB
-client = MongoClient('mongodb://localhost:27017/')
-db = client['mergington_high']
-activities_collection = db['activities']
-teachers_collection = db['teachers']
+# Simple in-memory database for testing
+class MockCollection:
+    def __init__(self):
+        self.data = {}
+    
+    def find(self, query=None):
+        results = []
+        for key, value in self.data.items():
+            doc = {"_id": key, **value}
+            
+            # Apply filtering if query is provided
+            if query:
+                match = True
+                
+                # Check day filter
+                if "schedule_details.days" in query:
+                    day_filter = query["schedule_details.days"]
+                    if "$in" in day_filter:
+                        target_days = day_filter["$in"]
+                        activity_days = doc.get("schedule_details", {}).get("days", [])
+                        if not any(day in activity_days for day in target_days):
+                            match = False
+                
+                # Check start time filter
+                if "schedule_details.start_time" in query:
+                    time_filter = query["schedule_details.start_time"]
+                    if "$gte" in time_filter:
+                        target_time = time_filter["$gte"]
+                        activity_time = doc.get("schedule_details", {}).get("start_time", "")
+                        if activity_time < target_time:
+                            match = False
+                
+                # Check end time filter
+                if "schedule_details.end_time" in query:
+                    time_filter = query["schedule_details.end_time"]
+                    if "$lte" in time_filter:
+                        target_time = time_filter["$lte"]
+                        activity_time = doc.get("schedule_details", {}).get("end_time", "")
+                        if activity_time > target_time:
+                            match = False
+                
+                if match:
+                    results.append(doc)
+            else:
+                results.append(doc)
+        
+        return results
+    
+    def find_one(self, query):
+        if isinstance(query, dict) and "_id" in query:
+            return self.data.get(query["_id"])
+        return None
+    
+    def insert_one(self, doc):
+        if "_id" in doc:
+            self.data[doc["_id"]] = doc
+        return True
+    
+    def update_one(self, query, update):
+        if isinstance(query, dict) and "_id" in query:
+            doc_id = query["_id"]
+            if doc_id in self.data:
+                if "$push" in update:
+                    for field, value in update["$push"].items():
+                        if field not in self.data[doc_id]:
+                            self.data[doc_id][field] = []
+                        self.data[doc_id][field].append(value)
+                if "$pull" in update:
+                    for field, value in update["$pull"].items():
+                        if field in self.data[doc_id]:
+                            try:
+                                self.data[doc_id][field].remove(value)
+                            except ValueError:
+                                pass
+                return type('MockResult', (), {'modified_count': 1})()
+        return type('MockResult', (), {'modified_count': 0})()
+    
+    def count_documents(self, query):
+        return len(self.data)
+    
+    def aggregate(self, pipeline):
+        # Simple implementation for getting unique days
+        days = set()
+        for activity in self.data.values():
+            if "schedule_details" in activity and "days" in activity["schedule_details"]:
+                days.update(activity["schedule_details"]["days"])
+        return [{"_id": day} for day in sorted(days)]
+
+# Use mock collections
+activities_collection = MockCollection()
+teachers_collection = MockCollection()
 
 # Methods
 def hash_password(password):
@@ -163,6 +248,17 @@ initial_activities = {
         },
         "max_participants": 16,
         "participants": ["william@mergington.edu", "jacob@mergington.edu"]
+    },
+    "Manga Maniacs": {
+        "description": "Explore as histórias fantásticas dos personagens mais interessantes dos Mangás japoneses (romances gráficos)",
+        "schedule": "Tuesdays, 7:00 PM - 8:00 PM",
+        "schedule_details": {
+            "days": ["Tuesday"],
+            "start_time": "19:00",
+            "end_time": "20:00"
+        },
+        "max_participants": 15,
+        "participants": []
     }
 }
 
